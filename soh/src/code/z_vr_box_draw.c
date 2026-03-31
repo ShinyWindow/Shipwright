@@ -30,8 +30,11 @@ void SkyboxDraw_Draw(SkyboxContext* skyboxCtx, GraphicsContext* gfxCtx, s16 skyb
 
     sSkyboxDrawMatrix = Graph_Alloc(gfxCtx, sizeof(Mtx));
 
+    // In VR, scale the skybox much larger so stereo parallax is negligible
+    // and it appears at infinity. Default ±126 units = 3.6m is far too close.
+    f32 skyScale = VR_IsInitialized() ? 100.0f : 1.0f;
     Matrix_Translate(x, y, z, MTXMODE_NEW);
-    Matrix_Scale(1.0f, 1.0f, 1.0f, MTXMODE_APPLY);
+    Matrix_Scale(skyScale, skyScale, skyScale, MTXMODE_APPLY);
     Matrix_RotateX(skyboxCtx->rot.x, MTXMODE_APPLY);
     Matrix_RotateY(skyboxCtx->rot.y, MTXMODE_APPLY);
     Matrix_RotateZ(skyboxCtx->rot.z, MTXMODE_APPLY);

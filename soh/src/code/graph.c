@@ -9,6 +9,7 @@
 #include "soh/Enhancements/gameconsole.h"
 #include "soh/OTRGlobals.h"
 #include "libultraship/bridge.h"
+#include <vr_interface.h>
 
 #define GFXPOOL_HEAD_MAGIC 0x1234
 #define GFXPOOL_TAIL_MAGIC 0x5678
@@ -309,7 +310,16 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
 
     gSPBranchList(WORK_DISP++, gfxCtx->polyOpaBuffer);
     gSPBranchList(POLY_OPA_DISP++, gfxCtx->polyXluBuffer);
-    gSPBranchList(POLY_XLU_DISP++, gfxCtx->overlayBuffer);
+
+    if (VR_IsInitialized()) {
+        gDPPipeSync(POLY_XLU_DISP++);
+        gDPFullSync(POLY_XLU_DISP++);
+        gSPEndDisplayList(POLY_XLU_DISP++);
+        VR_SetOverlayDisplayList(gfxCtx->overlayBuffer);
+    } else {
+        gSPBranchList(POLY_XLU_DISP++, gfxCtx->overlayBuffer);
+    }
+
     gDPPipeSync(OVERLAY_DISP++);
     gDPFullSync(OVERLAY_DISP++);
     gSPEndDisplayList(OVERLAY_DISP++);
