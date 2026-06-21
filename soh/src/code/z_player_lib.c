@@ -1482,6 +1482,19 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
     return false;
 }
 
+// VR first-person: draw Link's FULL body normally (unlike the vanilla first-person override, which
+// hides everything), but cull the head and hat so they don't clip into the headset camera.
+s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                                 void* thisx) {
+    s32 ret = Player_OverrideLimbDrawGameplayDefault(play, limbIndex, dList, pos, rot, thisx);
+
+    if (limbIndex == PLAYER_LIMB_HEAD || limbIndex == PLAYER_LIMB_HAT) {
+        *dList = NULL;
+    }
+
+    return ret;
+}
+
 s32 Player_OverrideLimbDrawGameplayCrawling(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
                                             void* thisx) {
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {

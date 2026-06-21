@@ -6,6 +6,7 @@
 
 #include <libultraship/libultra.h>
 #include "global.h"
+#include <vr_interface.h>
 
 #include "overlays/actors/ovl_Bg_Heavy_Block/z_bg_heavy_block.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h"
@@ -2060,6 +2061,15 @@ void Player_AnimReplaceNormalPlayLoopAdjusted(PlayState* play, Player* this, Lin
     Player_AnimReplacePlayLoopAdjusted(play, this, anim, 0x1C);
 }
 
+// Returns the yaw that control-stick input is interpreted relative to. In VR first-person this is
+// the HMD heading (so movement is head-relative); otherwise it's the active camera's yaw as normal.
+static s16 Player_GetSteeringYaw(PlayState* play) {
+    if (VR_IsInitialized() && VR_GetFirstPerson()) {
+        return VR_GetHeadingYaw();
+    }
+    return Camera_GetInputDirYaw(GET_ACTIVE_CAM(play));
+}
+
 void Player_ProcessControlStick(PlayState* play, Player* this) {
     s8 spinAngle;
     s8 direction;
@@ -2069,7 +2079,7 @@ void Player_ProcessControlStick(PlayState* play, Player* this) {
 
     func_80077D10(&sControlStickMagnitude, &sControlStickAngle, sControlInput);
 
-    sControlStickWorldYaw = Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + sControlStickAngle;
+    sControlStickWorldYaw = Player_GetSteeringYaw(play) + sControlStickAngle;
 
     this->controlStickDataIndex = (this->controlStickDataIndex + 1) % 4;
 
@@ -4040,7 +4050,7 @@ s32 Player_GetMovementSpeedAndYaw(Player* this, f32* outSpeedTarget, s16* outYaw
 
         return false;
     } else {
-        *outYawTarget += Camera_GetInputDirYaw(GET_ACTIVE_CAM(play));
+        *outYawTarget += Player_GetSteeringYaw(play);
         return true;
     }
 }
@@ -12668,7 +12678,11 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         func_8002EBCC(&this->actor, play, 0);
         func_8002ED80(&this->actor, play, 0);
 
-        if (this->unk_6AD != 0) {
+        if (VR_IsInitialized() && VR_GetFirstPerson()) {
+            // VR first-person: the camera sits at Link's head, so draw the full body but cull the
+            // head + hat (the game's projected-Z test uses the third-person matrix and doesn't apply).
+            overrideLimbDraw = Player_OverrideLimbDrawGameplayVRFirstPerson;
+        } else if (this->unk_6AD != 0) {
             Vec3f projectedHeadPos;
 
             SkinMatrix_Vec3fMtxFMultXYZ(&play->viewProjectionMtxF, &this->actor.focus.pos, &projectedHeadPos);

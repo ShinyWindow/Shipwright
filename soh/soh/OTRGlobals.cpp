@@ -1454,7 +1454,8 @@ extern "C" void Graph_StartFrame() {
     }
 }
 
-void RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>>& mtx_replacements) {
+void RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>>& mtx_replacements,
+                 const std::vector<float>& interp_alphas) {
     auto wnd = std::dynamic_pointer_cast<Fast::Fast3dWindow>(OTRGlobals::Instance->context->GetWindow());
 
     if (wnd == nullptr) {
@@ -1467,8 +1468,11 @@ void RunCommands(Gfx* Commands, const std::vector<std::unordered_map<Mtx*, MtxF>
     UIWidgets::Colors themeColor =
         static_cast<UIWidgets::Colors>(CVarGetInteger(CVAR_SETTING("Menu.Theme"), UIWidgets::Colors::LightBlue));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, UIWidgets::ColorValues.at(themeColor));
-    for (const auto& m : mtx_replacements) {
-        wnd->DrawAndRunGraphicsCommands(Commands, m);
+    for (size_t i = 0; i < mtx_replacements.size(); i++) {
+        // Tell the VR layer how far between game frames this sub-frame is, so it interpolates the
+        // camera anchor in step with the interpolated world geometry.
+        vr_set_interp_alpha(i < interp_alphas.size() ? interp_alphas[i] : 1.0f);
+        wnd->DrawAndRunGraphicsCommands(Commands, mtx_replacements[i]);
     }
     ImGui::PopStyleColor();
 }
@@ -1482,6 +1486,9 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
 
     audio.cv_to_thread.notify_one();
     std::vector<std::unordered_map<Mtx*, MtxF>> mtx_replacements;
+    // Per-sub-frame interpolation factor (0..1), parallel to mtx_replacements, so the VR camera
+    // anchor can be interpolated in lockstep with the rest of the world. See vr_set_interp_alpha.
+    std::vector<float> interp_alphas;
     int target_fps = OTRGlobals::Instance->GetInterpolationFPS();
     static int last_fps;
     static int last_update_rate;
@@ -1504,9 +1511,12 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
     while (time + original_fps <= next_original_frame) {
         time += original_fps;
         if (time != next_original_frame) {
-            mtx_replacements.push_back(FrameInterpolation_Interpolate((float)time / next_original_frame));
+            float alpha = (float)time / next_original_frame;
+            mtx_replacements.push_back(FrameInterpolation_Interpolate(alpha));
+            interp_alphas.push_back(alpha);
         } else {
             mtx_replacements.emplace_back();
+            interp_alphas.push_back(1.0f);
         }
     }
 
@@ -1520,9 +1530,11 @@ extern "C" void Graph_ProcessGfxCommands(Gfx* commands) {
     if (GfxDebuggerIsDebugging()) {
         mtx_replacements.clear();
         mtx_replacements.emplace_back();
+        interp_alphas.clear();
+        interp_alphas.push_back(1.0f);
     }
 
-    RunCommands(commands, mtx_replacements);
+    RunCommands(commands, mtx_replacements, interp_alphas);
 
     last_fps = fps;
     last_update_rate = R_UPDATE_RATE;

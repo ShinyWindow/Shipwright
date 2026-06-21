@@ -1369,6 +1369,31 @@ void Play_Draw(PlayState* play) {
 
     OPEN_DISPS(gfxCtx);
 
+    // #region SOH [VR] First-person camera anchor — push Link's head position to the VR layer.
+    // The VR view is then composed as (head anchor + HMD offset/orientation); see vr_openxr.cpp.
+    static bool sVrFirstPersonWasActive = false;
+    if (VR_IsInitialized()) {
+        if (CVarGetInteger("gVrFirstPerson", 1)) {
+            Player* vrPlayer = GET_PLAYER(play);
+            Vec3f vrHead = vrPlayer->actor.focus.pos;
+            vrHead.y += CVarGetFloat("gVrHeadHeightOffset", 0.0f);
+            VR_SetFirstPerson(true);
+            VR_SetCameraAnchor(vrHead.x, vrHead.y, vrHead.z);
+
+            // Heading recenter: capture the HMD->world yaw offset when first-person turns on, and
+            // whenever the player requests a manual recenter (set gVrRecenterHeading 1 in console).
+            if (!sVrFirstPersonWasActive || CVarGetInteger("gVrRecenterHeading", 0)) {
+                VR_RecenterHeading(vrPlayer->actor.shape.rot.y);
+                CVarSetInteger("gVrRecenterHeading", 0);
+            }
+            sVrFirstPersonWasActive = true;
+        } else {
+            VR_SetFirstPerson(false);
+            sVrFirstPersonWasActive = false;
+        }
+    }
+    // #endregion
+
     gSegments[4] = VIRTUAL_TO_PHYSICAL(play->objectCtx.status[play->objectCtx.mainKeepIndex].segment);
     gSegments[5] = VIRTUAL_TO_PHYSICAL(play->objectCtx.status[play->objectCtx.subKeepIndex].segment);
     gSegments[2] = VIRTUAL_TO_PHYSICAL(play->sceneSegment);
