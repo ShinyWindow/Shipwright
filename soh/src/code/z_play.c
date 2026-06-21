@@ -1373,6 +1373,8 @@ void Play_Draw(PlayState* play) {
     // The VR view is then composed as (head anchor + HMD offset/orientation); see vr_openxr.cpp.
     static bool sVrFirstPersonWasActive = false;
     if (VR_IsInitialized()) {
+        // Clear last frame's live hand-matrix tags; the player limb override re-registers this frame.
+        VR_ClearHandMatrices();
         if (CVarGetInteger("gVrFirstPerson", 1)) {
             Player* vrPlayer = GET_PLAYER(play);
             // Anchor to the actor ROOT (smooth, no walk-cycle bob) plus eye height, instead of the

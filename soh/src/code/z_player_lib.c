@@ -10,6 +10,8 @@
 #include "soh/Enhancements/randomizer/draw.h"
 #include "soh/ResourceManagerHelpers.h"
 
+#include <vr_interface.h>
+
 #include <stdlib.h>
 
 typedef struct {
@@ -1484,13 +1486,72 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
 
 // VR first-person: draw Link's FULL body normally (unlike the vanilla first-person override, which
 // hides everything), but cull the head and hat so they don't clip into the headset camera.
+// Tracks back-face culling left inverted by the previous limb's mirrored hand, so we clear it on the
+// next limb once that hand's mesh + held item have drawn.
+static s32 sVrHandInvertCulling = false;
+
 s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
                                                  void* thisx) {
+    Player* this = (Player*)thisx;
     s32 ret = Player_OverrideLimbDrawGameplayDefault(play, limbIndex, dList, pos, rot, thisx);
 
+    if (sVrHandInvertCulling) {
+        OPEN_DISPS(play->state.gfxCtx);
+        gSPClearExtraGeometryMode(POLY_OPA_DISP++, G_EX_INVERT_CULLING);
+        CLOSE_DISPS(play->state.gfxCtx);
+        sVrHandInvertCulling = false;
+    }
+
+    // Cull the head + hat (the camera sits inside Link's head).
     if (limbIndex == PLAYER_LIMB_HEAD || limbIndex == PLAYER_LIMB_HAT) {
         *dList = NULL;
+        return ret;
     }
+
+    // #region SOH [VR] Motion-control floating hands — hide the upper arms and pin each hand to its
+    // controller. We replace the hand limb's matrix with the controller's world pose (built in the VR
+    // layer), then re-apply Link's model scale; held items (sword/shield) draw on the same matrix in
+    // PostLimbDraw, so they follow for free. Link's LEFT hand holds the sword / RIGHT holds the shield;
+    // by default the player's RIGHT controller drives the sword hand (gVrLeftHanded swaps). Because the
+    // hand floats to the controller's world pose, which limb we borrow doesn't matter visually.
+    if (CVarGetInteger("gVrMotionHands", 1)) {
+        if (limbIndex == PLAYER_LIMB_L_SHOULDER || limbIndex == PLAYER_LIMB_L_FOREARM ||
+            limbIndex == PLAYER_LIMB_R_SHOULDER || limbIndex == PLAYER_LIMB_R_FOREARM) {
+            *dList = NULL;
+            return ret;
+        }
+        if (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND) {
+            s32 leftHanded = CVarGetInteger("gVrLeftHanded", 0);
+            s32 swordHandVr = leftHanded ? VR_HAND_LEFT : VR_HAND_RIGHT;
+            s32 vrHand = (limbIndex == PLAYER_LIMB_L_HAND) ? swordHandVr : (swordHandVr ^ 1);
+            // Default (right-handed) maps each controller to Link's OPPOSITE-side hand model, so mirror
+            // the geometry to flip its handedness; in left-handed mode the sides already match.
+            s32 mirror = !leftHanded;
+            VR_SetHandScale(this->actor.scale.x); // fold Link's model scale into the live hand matrix
+            VR_SetHandMirror(mirror);
+            MtxF handMtx;
+            if (VR_GetHandMatrix(vrHand, handMtx.mf)) {
+                Matrix_Put(&handMtx);
+                // Tag this limb's per-frame Mtx so gfx_pc swaps in the LIVE controller pose per eye —
+                // the hand tracks at headset rate instead of the game-rate interpolation (judder fix).
+                if (play->flexLimbOverrideMTX != NULL) {
+                    VR_RegisterHandMatrix((const void*)*play->flexLimbOverrideMTX, vrHand);
+                }
+                pos->x = pos->y = pos->z = 0.0f;
+                rot->x = rot->y = rot->z = 0;
+                if (mirror) {
+                    // The reflection flips triangle winding; invert back-face culling so the hand + held
+                    // item don't render inside-out. Cleared on the next limb (top of this function).
+                    OPEN_DISPS(play->state.gfxCtx);
+                    gSPSetExtraGeometryMode(POLY_OPA_DISP++, G_EX_INVERT_CULLING);
+                    CLOSE_DISPS(play->state.gfxCtx);
+                    sVrHandInvertCulling = true;
+                }
+            }
+            return ret;
+        }
+    }
+    // #endregion
 
     return ret;
 }
