@@ -12144,6 +12144,57 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
             }
 
             Actor_UpdatePos(&this->actor);
+
+            // #region SOH [VR] Roomscale 6DOF — physical headset translation moves Link's BODY, swept
+            // against walls by the engine's own sphere-vs-wall check. We move only as far as the body
+            // actually fits (the "achieved" amount) and report that back, so the camera anchor
+            // (bodyHead - achieved) keeps the eye continuous; anything the body can't reach stays as a
+            // head-lean ("head leans, body holds"). Gated to grounded + free locomotion. Rendering is
+            // untouched — this only changes Link's position. See vr_roomscale_6dof plan.
+            if (VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrRoomscale", 1) &&
+                (this->actor.bgCheckFlags & 1) && !Player_InBlockingCsMode(play, this) &&
+                !(this->stateFlags1 &
+                  (PLAYER_STATE1_TALKING | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                   PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_JUMPING |
+                   PLAYER_STATE1_FREEFALL)) &&
+                !(this->stateFlags2 & PLAYER_STATE2_DIVING)) {
+                float rsDesired[2];
+                VR_GetRoomscaleDesired(rsDesired);
+                float rsScale = CVarGetFloat("gVrRoomscaleScale", 1.0f);
+                float rsDx = rsDesired[0] * rsScale;
+                float rsDz = rsDesired[1] * rsScale;
+                float rsMag = sqrtf((rsDx * rsDx) + (rsDz * rsDz));
+                // Small deadzone: ignore sub-unit HMD jitter so Link's body doesn't micro-jitter (the
+                // camera still tracks head jitter; only the body is held still below the threshold).
+                if (rsMag > 0.1f) {
+                    // Rate-limit the per-frame catch-up so a large residual (e.g. after re-enabling)
+                    // glides in smoothly instead of lurching. Normal walking stays well under the cap.
+                    float rsCatchup = CVarGetFloat("gVrRoomscaleCatchup", 12.0f);
+                    if (rsMag > rsCatchup) {
+                        float k = rsCatchup / rsMag;
+                        rsDx *= k;
+                        rsDz *= k;
+                    }
+                    Vec3f rsFrom = this->actor.world.pos;
+                    Vec3f rsTo = rsFrom;
+                    rsTo.x += rsDx;
+                    rsTo.z += rsDz;
+                    Vec3f rsResult = rsTo;
+                    CollisionPoly* rsPoly;
+                    s32 rsBgId;
+                    // Same sphere-vs-wall sweep the player's own collision uses (radius/height match
+                    // Player_ProcessSceneCollision), so roomscale is blocked by walls exactly as walking is.
+                    BgCheck_EntitySphVsWall3(&play->colCtx, &rsResult, &rsTo, &rsFrom,
+                                             this->ageProperties->wallCheckRadius, &rsPoly, &rsBgId, &this->actor,
+                                             26.0f);
+                    this->actor.world.pos.x = rsResult.x;
+                    this->actor.world.pos.z = rsResult.z;
+                    // Advance the baked-in origin by what the body ACTUALLY moved (collision-limited).
+                    VR_AddRoomscaleDisplacement(rsResult.x - rsFrom.x, rsResult.z - rsFrom.z);
+                }
+            }
+            // #endregion
+
             Player_ProcessSceneCollision(play, this);
         } else {
             sFloorType = 0;

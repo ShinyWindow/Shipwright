@@ -7706,10 +7706,10 @@ Vec3s Camera_Update(Camera* camera) {
     // in/out as you turn your head. Rendering is unaffected: in first-person, gfx_pc.cpp builds clip
     // space from the per-eye VR matrices and skips the game's lookAt, so the game View is used only
     // CPU-side. We also force view scale to 1.0 (no zoom) and use a wide culling FOV so peripheral
-    // geometry isn't culled. Skipped during cutscenes to leave authored cameras driving CPU-side
-    // framing. NOTE: in first-person the render is ALWAYS the HMD view (even in cutscenes), so if
-    // culling/audio pop during a cutscene, dropping the csCtx guard makes them match the render.
-    if (VR_IsInitialized() && VR_GetFirstPerson() && (camera->play->csCtx.state == CS_STATE_IDLE)) {
+    // geometry isn't culled. Applied during cutscenes too: in first-person the render is ALWAYS the
+    // HMD view (the player experiences cutscenes from Link's eyes), so culling/audio must follow the
+    // head there as well to stay matched to what's drawn.
+    if (VR_IsInitialized() && VR_GetFirstPerson()) {
         float vrEye[3], vrFwd[3], vrUp[3];
         VR_GetCameraPose(vrEye, vrFwd, vrUp);
         viewEye.x = vrEye[0];

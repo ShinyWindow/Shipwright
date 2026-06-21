@@ -1379,18 +1379,61 @@ void Play_Draw(PlayState* play) {
             // animated head bone (actor.focus.pos) which carries the up/down bob and sway. The body
             // mesh still animates visually; the camera stays smooth (VR comfort: no uninitiated
             // vertical motion). Tune eye height with gVrHeadHeightOffset.
-            Vec3f vrHead = vrPlayer->actor.world.pos;
-            vrHead.y += Player_GetHeight(vrPlayer) + CVarGetFloat("gVrHeadHeightOffset", 0.0f);
-            VR_SetFirstPerson(true);
-            VR_SetCameraAnchor(vrHead.x, vrHead.y, vrHead.z);
-
             // Heading recenter: capture the HMD->world yaw offset when first-person turns on, and
             // whenever the player requests a manual recenter (set gVrRecenterHeading 1 in console).
+            // Also re-zero roomscale here so the player's current physical position maps to Link's
+            // current body — must run before we read the roomscale origin for the anchor below.
             if (!sVrFirstPersonWasActive || CVarGetInteger("gVrRecenterHeading", 0)) {
                 VR_RecenterHeading(vrPlayer->actor.shape.rot.y);
+                VR_ResetRoomscale();
                 CVarSetInteger("gVrRecenterHeading", 0);
             }
             sVrFirstPersonWasActive = true;
+
+            Vec3f vrHead = vrPlayer->actor.world.pos;
+            vrHead.y += Player_GetHeight(vrPlayer) + CVarGetFloat("gVrHeadHeightOffset", 0.0f);
+            // Roomscale: push the COMBINED anchor (body head minus the physical-walk displacement
+            // already baked into the body by Player_UpdateCommon), so the eye stays continuous as the
+            // body slides under the head and the existing anchor interpolation stays smooth. The
+            // origin is horizontal only (x,z); y stays the body head height.
+            // Keep the camera within the SAME walls that stop Link's body, but ONLY for non-6DOF
+            // sources. The joystick only ever moves Link's (collision-bounded) body, so it can't carry
+            // the camera through a wall; the camera's extra reach is the physical head offset (the
+            // roomscale residual). We sphere-cast from Link's body to where the camera wants to sit
+            // (using Link's own wall radius) to find how much of that offset is past a wall, then EASE
+            // only a fraction of it back into Link's bounds each frame. Active physical head movement
+            // outruns the ease (a real 6DOF lean still pokes through); a static head offset or a
+            // joystick-driven approach has no motion, so it decays to Link's boundary within a few
+            // frames. gVrCameraWallEase: 1 = hard clamp (default — looking into a wall just pushes you
+            // back; not what most modern VR does, but a fair compromise for now), ~0.15 = gentle ease,
+            // 0 = off (camera passes walls freely). gVrCameraWallCollision 0 disables this entirely.
+            if (CVarGetInteger("gVrCameraWallCollision", 1)) {
+                float vrResidual[2]; // the camera's current horizontal offset from Link's body
+                VR_GetRoomscaleDesired(vrResidual);
+                if ((vrResidual[0] != 0.0f) || (vrResidual[1] != 0.0f)) {
+                    f32 vrCamY = vrPlayer->actor.world.pos.y + Player_GetHeight(vrPlayer);
+                    Vec3f vrCamFrom = { vrPlayer->actor.world.pos.x, vrCamY, vrPlayer->actor.world.pos.z };
+                    Vec3f vrCamTo = { vrCamFrom.x + vrResidual[0], vrCamY, vrCamFrom.z + vrResidual[1] };
+                    Vec3f vrCamRes = vrCamTo;
+                    CollisionPoly* vrCamPoly;
+                    s32 vrCamBgId;
+                    BgCheck_EntitySphVsWall3(&play->colCtx, &vrCamRes, &vrCamTo, &vrCamFrom,
+                                             vrPlayer->ageProperties->wallCheckRadius, &vrCamPoly, &vrCamBgId,
+                                             &vrPlayer->actor, 26.0f);
+                    float vrWallEase = CVarGetFloat("gVrCameraWallEase", 1.0f);
+                    VR_AddRoomscaleDisplacement((vrCamTo.x - vrCamRes.x) * vrWallEase,
+                                                (vrCamTo.z - vrCamRes.z) * vrWallEase);
+                }
+            }
+            // Also bound the camera-to-body lean by distance, for places with no wall at head height
+            // (ledges, railings) where it could otherwise drift far from Link (0 = unbounded).
+            VR_ClampRoomscaleLean(CVarGetFloat("gVrRoomscaleMaxLean", 30.0f));
+            float vrRsOrigin[2];
+            VR_GetRoomscaleOrigin(vrRsOrigin);
+            vrHead.x -= vrRsOrigin[0];
+            vrHead.z -= vrRsOrigin[1];
+            VR_SetFirstPerson(true);
+            VR_SetCameraAnchor(vrHead.x, vrHead.y, vrHead.z);
         } else {
             VR_SetFirstPerson(false);
             sVrFirstPersonWasActive = false;
