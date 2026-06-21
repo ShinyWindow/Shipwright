@@ -1375,8 +1375,12 @@ void Play_Draw(PlayState* play) {
     if (VR_IsInitialized()) {
         if (CVarGetInteger("gVrFirstPerson", 1)) {
             Player* vrPlayer = GET_PLAYER(play);
-            Vec3f vrHead = vrPlayer->actor.focus.pos;
-            vrHead.y += CVarGetFloat("gVrHeadHeightOffset", 0.0f);
+            // Anchor to the actor ROOT (smooth, no walk-cycle bob) plus eye height, instead of the
+            // animated head bone (actor.focus.pos) which carries the up/down bob and sway. The body
+            // mesh still animates visually; the camera stays smooth (VR comfort: no uninitiated
+            // vertical motion). Tune eye height with gVrHeadHeightOffset.
+            Vec3f vrHead = vrPlayer->actor.world.pos;
+            vrHead.y += Player_GetHeight(vrPlayer) + CVarGetFloat("gVrHeadHeightOffset", 0.0f);
             VR_SetFirstPerson(true);
             VR_SetCameraAnchor(vrHead.x, vrHead.y, vrHead.z);
 
