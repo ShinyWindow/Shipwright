@@ -9,6 +9,8 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/controls/Mouse.h"
 
+#include <vr_interface.h>
+
 s16 Camera_ChangeSettingFlags(Camera* camera, s16 setting, s16 flags);
 s32 Camera_ChangeModeFlags(Camera* camera, s16 mode, u8 flags);
 s32 Camera_QRegInit(void);
@@ -7697,6 +7699,33 @@ Vec3s Camera_Update(Camera* camera) {
     } else {
         View_SetScale(&camera->play->view, 1.0f);
     }
+
+    // #region SOH [VR] Camera unification — report the VR head pose as the game camera so the
+    // engine's CPU-side systems (frustum culling, audio panning via actor->projectedPos,
+    // projected-position/LOD) agree with the rendered HMD view. This is what stops geometry popping
+    // in/out as you turn your head. Rendering is unaffected: in first-person, gfx_pc.cpp builds clip
+    // space from the per-eye VR matrices and skips the game's lookAt, so the game View is used only
+    // CPU-side. We also force view scale to 1.0 (no zoom) and use a wide culling FOV so peripheral
+    // geometry isn't culled. Skipped during cutscenes to leave authored cameras driving CPU-side
+    // framing. NOTE: in first-person the render is ALWAYS the HMD view (even in cutscenes), so if
+    // culling/audio pop during a cutscene, dropping the csCtx guard makes them match the render.
+    if (VR_IsInitialized() && VR_GetFirstPerson() && (camera->play->csCtx.state == CS_STATE_IDLE)) {
+        float vrEye[3], vrFwd[3], vrUp[3];
+        VR_GetCameraPose(vrEye, vrFwd, vrUp);
+        viewEye.x = vrEye[0];
+        viewEye.y = vrEye[1];
+        viewEye.z = vrEye[2];
+        viewAt.x = vrEye[0] + (vrFwd[0] * 100.0f);
+        viewAt.y = vrEye[1] + (vrFwd[1] * 100.0f);
+        viewAt.z = vrEye[2] + (vrFwd[2] * 100.0f);
+        viewUp.x = vrUp[0];
+        viewUp.y = vrUp[1];
+        viewUp.z = vrUp[2];
+        viewFov = VR_GetCullingFovy();
+        View_SetScale(&camera->play->view, 1.0f);
+    }
+    // #endregion
+
     camera->play->view.fovy = viewFov;
     func_800AA358(&camera->play->view, &viewEye, &viewAt, &viewUp);
     camera->camDir.x = eyeAtAngle.pitch;
