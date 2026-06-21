@@ -8,6 +8,7 @@
 
 #include "ResourceManagerHelpers.h"
 #include "graphic/Fast3D/Fast3dWindow.h"
+#include "graphic/Fast3D/vr_openxr.h"
 #include <File.h>
 #include <DisplayList.h>
 #include <Window.h>
@@ -526,6 +527,15 @@ bool OTRGlobals::HasOriginal() {
 }
 
 uint32_t OTRGlobals::GetInterpolationFPS() {
+    // In VR, the OpenXR compositor (xrWaitFrame) paces presentation at the headset's refresh
+    // rate, not the desktop monitor's. The interpolation system divides this rate by the native
+    // 20fps to decide how many in-between frames to render per game tick; if the value here
+    // doesn't match the actual present rate, the fixed-timestep logic advances at the wrong
+    // wall-clock speed (Link moves in fast/slow motion). Match it to the headset.
+    if (vr_is_initialized()) {
+        return vr_get_refresh_rate();
+    }
+
     if (CVarGetInteger(CVAR_SETTING("MatchRefreshRate"), 0)) {
         return Ship::Context::GetInstance()->GetWindow()->GetCurrentRefreshRate();
     } else if (CVarGetInteger(CVAR_VSYNC_ENABLED, 1) ||
