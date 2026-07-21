@@ -7,6 +7,8 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 
+#include <vr_interface.h>
+
 s32 D_8012D280 = 1;
 
 void OTRControllerCallback(uint8_t rumble);
@@ -317,6 +319,41 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
     }
     osRecvMesg(queue, NULL, OS_MESG_BLOCK);
     osContGetReadData(padMgr->pads);
+
+    // #region SOH [VR] Map the OpenXR controllers onto the N64 pad (port 0) so the headset controllers
+    // are the default game controller everywhere — gameplay AND menus (this runs before
+    // PadMgr_ProcessInputs, which derives press/rel). OR'd in, so keyboard/gamepad still work alongside.
+    if (VR_IsInitialized() && CVarGetInteger("gVrControllerInput", 1)) {
+        OSContPad* vrPad = &padMgr->pads[0];
+        uint16_t vrL = VR_GetControllerButton(VR_HAND_LEFT);
+        uint16_t vrR = VR_GetControllerButton(VR_HAND_RIGHT);
+
+        // Right hand: A button -> A (jump/context), trigger -> B (attack/sword).
+        if (vrR & VR_BTN_PRIMARY) vrPad->button |= BTN_A;
+        if (vrR & VR_BTN_TRIGGER) vrPad->button |= BTN_B;
+        // Left hand: trigger -> Z (target), grip -> R (shield), menu -> Start (pause).
+        if (vrL & VR_BTN_TRIGGER) vrPad->button |= BTN_Z;
+        if (vrL & VR_BTN_GRIP) vrPad->button |= BTN_R;
+        if (vrL & VR_BTN_MENU) vrPad->button |= BTN_START;
+
+        // Left thumbstick -> movement (control stick). Overrides only when actually pushed (deadzone),
+        // so it doesn't zero out a keyboard/gamepad stick when idle.
+        float lx = 0.0f, ly = 0.0f;
+        VR_GetThumbstick(VR_HAND_LEFT, &lx, &ly);
+        if (((lx * lx) + (ly * ly)) > (0.15f * 0.15f)) {
+            vrPad->stick_x = (s8)CLAMP(lx * 127.0f, -128.0f, 127.0f);
+            vrPad->stick_y = (s8)CLAMP(ly * 127.0f, -128.0f, 127.0f);
+        }
+
+        // Right thumbstick -> C-buttons (items), digital with a threshold.
+        float rx = 0.0f, ry = 0.0f;
+        VR_GetThumbstick(VR_HAND_RIGHT, &rx, &ry);
+        if (ry > 0.5f) vrPad->button |= BTN_CUP;
+        if (ry < -0.5f) vrPad->button |= BTN_CDOWN;
+        if (rx > 0.5f) vrPad->button |= BTN_CRIGHT;
+        if (rx < -0.5f) vrPad->button |= BTN_CLEFT;
+    }
+    // #endregion
 
     Mouse_UpdateAll();
 
