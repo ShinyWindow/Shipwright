@@ -83,6 +83,7 @@ SohMenu::SohMenu(const std::string& consoleVariable, const std::string& name)
 void SohMenu::InitElement() {
     Ship::Menu::InitElement();
     AddMenuSettings();
+    AddMenuVRSettings();
     AddMenuEnhancements();
     AddMenuRandomizer();
 #ifdef ENABLE_REMOTE_CONTROL

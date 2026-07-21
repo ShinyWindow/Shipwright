@@ -1393,7 +1393,20 @@ void Play_Draw(PlayState* play) {
             sVrFirstPersonWasActive = true;
 
             Vec3f vrHead = vrPlayer->actor.world.pos;
-            vrHead.y += Player_GetHeight(vrPlayer) + CVarGetFloat("gVrHeadHeightOffset", 0.0f);
+            vrHead.y += Player_GetHeight(vrPlayer) + CVarGetFloat("gVrHeadHeightOffset", -9.0f);
+            // Head position relative to Link's body, tunable from VR Settings. Forward/side follow
+            // Link's facing. All offsets are GAME UNITS applied to the anchor, so they interact with
+            // world scale the physically-correct way: a lower head really does bring the ground
+            // closer, by exactly offset/worldScale meters.
+            {
+                f32 vrHeadFwd = CVarGetFloat("gVrHeadOffsetForward", 6.0f);
+                f32 vrHeadSide = CVarGetFloat("gVrHeadOffsetSide", 0.0f);
+                if (vrHeadFwd != 0.0f || vrHeadSide != 0.0f) {
+                    s16 vrBodyYaw = vrPlayer->actor.shape.rot.y;
+                    vrHead.x += Math_SinS(vrBodyYaw) * vrHeadFwd - Math_CosS(vrBodyYaw) * vrHeadSide;
+                    vrHead.z += Math_CosS(vrBodyYaw) * vrHeadFwd + Math_SinS(vrBodyYaw) * vrHeadSide;
+                }
+            }
             // Roomscale: push the COMBINED anchor (body head minus the physical-walk displacement
             // already baked into the body by Player_UpdateCommon), so the eye stays continuous as the
             // body slides under the head and the existing anchor interpolation stays smooth. The

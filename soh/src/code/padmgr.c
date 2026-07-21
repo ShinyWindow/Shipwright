@@ -328,13 +328,41 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
         uint16_t vrL = VR_GetControllerButton(VR_HAND_LEFT);
         uint16_t vrR = VR_GetControllerButton(VR_HAND_RIGHT);
 
-        // Right hand: A button -> A (jump/context), trigger -> B (attack/sword).
-        if (vrR & VR_BTN_PRIMARY) vrPad->button |= BTN_A;
-        if (vrR & VR_BTN_TRIGGER) vrPad->button |= BTN_B;
-        // Left hand: trigger -> Z (target), grip -> R (shield), menu -> Start (pause).
-        if (vrL & VR_BTN_TRIGGER) vrPad->button |= BTN_Z;
-        if (vrL & VR_BTN_GRIP) vrPad->button |= BTN_R;
-        if (vrL & VR_BTN_MENU) vrPad->button |= BTN_START;
+        // Assignable VR button -> N64 button mapping, configured in VR Settings -> Buttons.
+        // CVar value: 0=None 1=A 2=B 3=Z 4=R 5=L 6=Start 7=C-Up 8=C-Down 9=C-Left 10=C-Right
+        {
+            static const u16 sVrN64Buttons[] = {
+                0,     BTN_A,   BTN_B,     BTN_Z,    BTN_R,     BTN_L,
+                BTN_START, BTN_CUP, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT,
+            };
+            static const char* sVrBtnCvars[2][6] = {
+                { "gVrBtnLTrigger", "gVrBtnLGrip", "gVrBtnLPrimary", "gVrBtnLSecondary", "gVrBtnLStickClick",
+                  "gVrBtnLMenu" },
+                { "gVrBtnRTrigger", "gVrBtnRGrip", "gVrBtnRPrimary", "gVrBtnRSecondary", "gVrBtnRStickClick",
+                  "gVrBtnRMenu" },
+            };
+            // Defaults: left = Z-target, R-shield, C-left, C-right, none, Start;
+            //           right = B-sword, none, A, C-down, none, none.
+            static const s32 sVrBtnDefaults[2][6] = {
+                { 3, 4, 9, 10, 0, 6 },
+                { 2, 0, 1, 8, 0, 0 },
+            };
+            static const u16 sVrBtnMasks[6] = { VR_BTN_TRIGGER,   VR_BTN_GRIP,       VR_BTN_PRIMARY,
+                                                VR_BTN_SECONDARY, VR_BTN_THUMBCLICK, VR_BTN_MENU };
+            s32 vrHandIdx, vrBtnIdx;
+            for (vrHandIdx = 0; vrHandIdx < 2; vrHandIdx++) {
+                uint16_t vrState = (vrHandIdx == 0) ? vrL : vrR;
+                for (vrBtnIdx = 0; vrBtnIdx < 6; vrBtnIdx++) {
+                    if (vrState & sVrBtnMasks[vrBtnIdx]) {
+                        s32 mapped = CVarGetInteger(sVrBtnCvars[vrHandIdx][vrBtnIdx],
+                                                    sVrBtnDefaults[vrHandIdx][vrBtnIdx]);
+                        if (mapped > 0 && mapped <= 10) {
+                            vrPad->button |= sVrN64Buttons[mapped];
+                        }
+                    }
+                }
+            }
+        }
 
         // Left thumbstick -> movement (control stick). Overrides only when actually pushed (deadzone),
         // so it doesn't zero out a keyboard/gamepad stick when idle.
@@ -345,13 +373,18 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
             vrPad->stick_y = (s8)CLAMP(ly * 127.0f, -128.0f, 127.0f);
         }
 
-        // Right thumbstick -> C-buttons (items), digital with a threshold.
+        // Right thumbstick -> C-buttons (items), digital with a threshold. When snap turning is
+        // enabled the X axis belongs to it (handled in the VR layer), so only Y maps to C-buttons —
+        // except in flat-screen menus (file select, pause), where snap turning is suspended and the
+        // full stick navigates/equips (kaleido needs C-left/right to assign items).
         float rx = 0.0f, ry = 0.0f;
         VR_GetThumbstick(VR_HAND_RIGHT, &rx, &ry);
         if (ry > 0.5f) vrPad->button |= BTN_CUP;
         if (ry < -0.5f) vrPad->button |= BTN_CDOWN;
-        if (rx > 0.5f) vrPad->button |= BTN_CRIGHT;
-        if (rx < -0.5f) vrPad->button |= BTN_CLEFT;
+        if (!CVarGetInteger("gVrSnapTurnOn", 1) || VR_IsFlatScreen()) {
+            if (rx > 0.5f) vrPad->button |= BTN_CRIGHT;
+            if (rx < -0.5f) vrPad->button |= BTN_CLEFT;
+        }
     }
     // #endregion
 

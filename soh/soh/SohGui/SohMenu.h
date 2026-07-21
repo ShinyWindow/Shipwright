@@ -195,6 +195,7 @@ class SohMenu : public Ship::Menu {
     void AddSidebarEntry(std::string sectionName, std::string sidbarName, uint32_t columnCount);
     WidgetInfo& AddWidget(WidgetPath& pathInfo, std::string widgetName, WidgetType widgetType);
     void AddMenuSettings();
+    void AddMenuVRSettings();
     void AddMenuEnhancements();
     void AddMenuDevTools();
     void AddMenuRandomizer();

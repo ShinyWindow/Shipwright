@@ -316,6 +316,13 @@ void Graph_Update(GraphicsContext* gfxCtx, GameState* gameState) {
         gDPFullSync(POLY_XLU_DISP++);
         gSPEndDisplayList(POLY_XLU_DISP++);
         VR_SetOverlayDisplayList(gfxCtx->overlayBuffer);
+        // 2D contexts — no PlayState (file select, title, opening) or the pause menu — render on a
+        // world-locked floating panel instead of the stereo world, so menus are readable at a
+        // comfortable distance and head tracking stays alive while the game is frozen.
+        {
+            extern PlayState* gPlayState;
+            VR_SetFlatScreen((gPlayState == NULL) || (gPlayState->pauseCtx.state != 0));
+        }
     } else {
         gSPBranchList(POLY_XLU_DISP++, gfxCtx->overlayBuffer);
     }

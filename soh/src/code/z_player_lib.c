@@ -1524,11 +1524,19 @@ s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex,
             s32 leftHanded = CVarGetInteger("gVrLeftHanded", 0);
             s32 swordHandVr = leftHanded ? VR_HAND_LEFT : VR_HAND_RIGHT;
             s32 vrHand = (limbIndex == PLAYER_LIMB_L_HAND) ? swordHandVr : (swordHandVr ^ 1);
-            // Default (right-handed) maps each controller to Link's OPPOSITE-side hand model, so mirror
-            // the geometry to flip its handedness; in left-handed mode the sides already match.
-            s32 mirror = !leftHanded;
+            // Default (right-handed) maps each controller to Link's OPPOSITE-side hand model; the
+            // reflection that flips a mesh's handedness is per hand because it also mirrors held
+            // items' face designs — the sword survives that, but the shield's crest reads as
+            // upside-down, so the shield hand defaults to unmirrored. No mirroring in left-handed
+            // mode (sides already match).
+            s32 mirror;
+            if (limbIndex == PLAYER_LIMB_L_HAND) {
+                mirror = !leftHanded && CVarGetInteger("gVrHandMirrorSword", 1);
+            } else {
+                mirror = !leftHanded && CVarGetInteger("gVrHandMirrorShield", 1);
+            }
             VR_SetHandScale(this->actor.scale.x); // fold Link's model scale into the live hand matrix
-            VR_SetHandMirror(mirror);
+            VR_SetHandMirror(vrHand, mirror);
             MtxF handMtx;
             if (VR_GetHandMatrix(vrHand, handMtx.mf)) {
                 Matrix_Put(&handMtx);
